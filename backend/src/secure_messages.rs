@@ -62,8 +62,9 @@ struct DueMessage {
 fn derive_key(secret: &[u8], context: &'static [u8]) -> Result<LessSafeKey, ApiError> {
     let salt = Salt::new(HKDF_SHA256, b"inheritx-message-encryption");
     let prk = salt.extract(secret);
+    let info = [context];
     let okm = prk
-        .expand(&[context], &AES_256_GCM)
+        .expand(&info, &AES_256_GCM)
         .map_err(|_| ApiError::Internal(anyhow::anyhow!("Key derivation failed")))?;
     let mut key_bytes = [0u8; KEY_LEN];
     okm.fill(&mut key_bytes)
@@ -460,7 +461,8 @@ impl LegacyMessageDeliveryService {
     }
 
     async fn deliver_single(&self, row: &DueMessage) -> Result<(), ApiError> {
-        let key_material = MessageKeyService::key_material_by_version(&self.db, row.key_version)?;
+        let key_material =
+            MessageKeyService::key_material_by_version(&self.db, row.key_version).await?;
         let payload_key = derive_key(&key_material, b"legacy-message-payload-key")?;
         let decrypted = decrypt_with_key(&payload_key, &row.encrypted_payload, &row.payload_nonce)?;
         let decrypted_payload = String::from_utf8(decrypted)
